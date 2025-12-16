@@ -27,3 +27,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Temporary setup scripts
+zabbix/*.py
+zabbix-5gcore/*.py
