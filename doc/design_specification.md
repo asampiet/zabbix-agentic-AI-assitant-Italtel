@@ -47,11 +47,14 @@
 | Frontend | 13000 | React UI, Node.js server |
 | Backend | 13001 | REST API, Strands Agent, Business Logic |
 | MCP Server | 13002 | Zabbix API integration, Tool execution |
-| PostgreSQL (App) | 13432 | Investigation history, Configuration |
 | pgAdmin | 13050 | Database administration UI |
-| Zabbix Web UI | 13080 | Zabbix monitoring web interface |
-| Zabbix Server | 13051 | Zabbix server (agent connections) |
-| Zabbix PostgreSQL | 13500 | Zabbix database |
+| Zabbix Backbone Server | 13051 | Zabbix server for network backbone |
+| Zabbix 5G Core Server | 13052 | Zabbix server for 5G core |
+| Zabbix Backbone Web UI | 13080 | Zabbix web interface (backbone) |
+| Zabbix 5G Core Web UI | 13081 | Zabbix web interface (5G core) |
+| PostgreSQL (App) | 13432 | Investigation history, Configuration |
+| Zabbix Backbone PostgreSQL | 13500 | Zabbix backbone database |
+| Zabbix 5G Core PostgreSQL | 13501 | Zabbix 5G core database |
 
 ### 1.3 AWS-Ready Design Considerations
 
@@ -694,27 +697,19 @@ logging:
 ```yaml
 # config/instances.yaml
 instances:
-  - id: "zabbix-local"
-    name: "Local Zabbix 7.x"
+  - id: "zabbix-backbone"
+    name: "Network Backbone"
     url: "http://localhost:13080/api_jsonrpc.php"
     username: "Admin"
-    password: "${ZABBIX_LOCAL_PASSWORD}"
+    password: "${ZABBIX_BACKBONE_PASSWORD}"
     timeout: 30
     enabled: true
     
-  - id: "zabbix-dc1"
-    name: "Production DC1"
-    url: "https://zabbix-dc1.example.com/api_jsonrpc.php"
-    username: "api_user"
-    password: "${ZABBIX_DC1_PASSWORD}"
-    timeout: 30
-    enabled: true
-    
-  - id: "zabbix-dc2"
-    name: "Production DC2"
-    url: "https://zabbix-dc2.example.com/api_jsonrpc.php"
-    username: "api_user"
-    password: "${ZABBIX_DC2_PASSWORD}"
+  - id: "zabbix-5gcore"
+    name: "5G Core Network"
+    url: "http://localhost:13081/api_jsonrpc.php"
+    username: "Admin"
+    password: "${ZABBIX_5GCORE_PASSWORD}"
     timeout: 30
     enabled: true
 ```
@@ -731,9 +726,8 @@ POSTGRES_PASSWORD=noc_password
 POSTGRES_DB=noc_db
 
 # Zabbix credentials
-ZABBIX_LOCAL_PASSWORD=zabbix
-ZABBIX_DC1_PASSWORD=secret123
-ZABBIX_DC2_PASSWORD=secret456
+ZABBIX_BACKBONE_PASSWORD=zabbix
+ZABBIX_5GCORE_PASSWORD=zabbix
 
 # AWS (for Bedrock)
 AWS_REGION=us-east-1
@@ -1230,8 +1224,23 @@ All network hosts are configured with manual inventory mode containing:
 | contact | noc@italtel.local |
 | serialno_a | Unique serial (CORE-001, TRANS-001, ACC-001, etc.) |
 
-### 8.2 Service Tree
+### 8.2 Zabbix Instances
 
+Two Zabbix 7.x instances are deployed for monitoring different network domains:
+
+#### 8.2.1 Zabbix Backbone (zabbix-backbone)
+
+| Service | Port | Container |
+|---------|------|-----------|
+| Web UI | 13080 | zabbix-web |
+| Server | 13051 | zabbix-server |
+| PostgreSQL | 13500 | zabbix-postgres |
+
+**Credentials:** Admin / zabbix
+
+**Monitored Hosts:** 12 FRRouting network devices on `network_netlab` (172.30.0.x)
+
+**Service Tree:**
 ```
 Network Infrastructure (root)
 ├── Core Layer
@@ -1250,5 +1259,45 @@ Network Infrastructure (root)
     ├── access-3 (172.30.0.33)
     └── access-4 (172.30.0.34)
 ```
+
+#### 8.2.2 Zabbix 5G Core (zabbix-5gcore)
+
+| Service | Port | Container |
+|---------|------|-----------|
+| Web UI | 13081 | zabbix-5gcore-web |
+| Server | 13052 | zabbix-5gcore-server |
+| PostgreSQL | 13501 | zabbix-5gcore-postgres |
+
+**Credentials:** Admin / zabbix
+
+**Session Cookie:** `zbx_5gcore_sessionid` (unique to avoid cookie collision with backbone instance)
+
+**Monitored Hosts:** 10 Open5GS Network Functions on `5g-core_open5gs` (10.45.0.x)
+
+**Service Tree:**
+```
+5G Core Infrastructure (root)
+├── Control Plane
+│   ├── open5gs-amf (10.45.0.30) - Access and Mobility Management
+│   ├── open5gs-smf (10.45.0.31) - Session Management
+│   ├── open5gs-nrf (10.45.0.20) - Network Repository
+│   ├── open5gs-ausf (10.45.0.21) - Authentication Server
+│   ├── open5gs-udm (10.45.0.22) - Unified Data Management
+│   ├── open5gs-udr (10.45.0.23) - Unified Data Repository
+│   ├── open5gs-pcf (10.45.0.24) - Policy Control
+│   ├── open5gs-nssf (10.45.0.26) - Network Slice Selection
+│   └── open5gs-bsf (10.45.0.25) - Binding Support
+└── User Plane
+    └── open5gs-upf (10.45.0.32) - User Plane Function
+```
+
+### 8.3 Monitoring Configuration
+
+All hosts are monitored via ICMP simple checks with:
+- **Item key:** `icmpping[<target_ip>]`
+- **Check interval:** 10 seconds
+- **Trigger expression:** `max(/<host>/icmpping[<ip>],#3)=0` (3 consecutive failures)
+- **Trigger severity:** Disaster (5)
+- **Tags:** `scope=<hostname>` for service linking
 
 Services are linked to ICMP triggers via `scope` tags for automatic status propagation.

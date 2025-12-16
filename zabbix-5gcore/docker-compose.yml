@@ -1,49 +1,58 @@
-name: zabbix-backbone
+name: zabbix-5gcore
 
 services:
   zabbix-postgres:
     image: postgres:15-alpine
-    container_name: zabbix-postgres
+    container_name: zabbix-5gcore-postgres
     environment:
       POSTGRES_USER: zabbix
       POSTGRES_PASSWORD: zabbix_pwd
       POSTGRES_DB: zabbix
     volumes:
-      - zabbix_postgres_data:/var/lib/postgresql/data
+      - zabbix_5gcore_postgres_data:/var/lib/postgresql/data
     ports:
-      - "13500:5432"
+      - "13501:5432"
     restart: unless-stopped
 
   zabbix-server:
     image: zabbix/zabbix-server-pgsql:alpine-7.0-latest
-    container_name: zabbix-server
+    container_name: zabbix-5gcore-server
     environment:
-      DB_SERVER_HOST: zabbix-postgres
+      DB_SERVER_HOST: zabbix-5gcore-postgres
       POSTGRES_USER: zabbix
       POSTGRES_PASSWORD: zabbix_pwd
       POSTGRES_DB: zabbix
     ports:
-      - "13051:10051"
+      - "13052:10051"
     depends_on:
       - zabbix-postgres
+    networks:
+      - default
+      - open5gs
     restart: unless-stopped
 
   zabbix-web:
     image: zabbix/zabbix-web-nginx-pgsql:alpine-7.0-latest
-    container_name: zabbix-web
+    container_name: zabbix-5gcore-web
     environment:
-      DB_SERVER_HOST: zabbix-postgres
+      DB_SERVER_HOST: zabbix-5gcore-postgres
       POSTGRES_USER: zabbix
       POSTGRES_PASSWORD: zabbix_pwd
       POSTGRES_DB: zabbix
-      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_HOST: zabbix-5gcore-server
       PHP_TZ: Europe/Rome
+      ZBX_SESSION_NAME: zbx_5gcore_sessionid
     ports:
-      - "13080:8080"
+      - "13081:8080"
     depends_on:
       - zabbix-server
       - zabbix-postgres
     restart: unless-stopped
 
+networks:
+  open5gs:
+    external: true
+    name: 5g-core_open5gs
+
 volumes:
-  zabbix_postgres_data:
+  zabbix_5gcore_postgres_data:
